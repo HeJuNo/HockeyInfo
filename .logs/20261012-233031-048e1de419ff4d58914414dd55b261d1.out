@@ -1,0 +1,6 @@
+[main 3df7682] Fixed profile card not showing on Home (auto-fetch profile on session restore) and Settings showing "101" instead of real profile data (removed mih_v3_cookage mapping, show full player profile with club, age, nationality, position)
+ 7 files changed, 88 insertions(+), 18 deletions(-)
+ create mode 100644 .logs/20261012-232323-96feb7c4e811444fa4294b5b16ecd60d.retcode
+ create mode 100644 .logs/20261012-233031-048e1de419ff4d58914414dd55b261d1.err
+ create mode 100644 .logs/20261012-233031-048e1de419ff4d58914414dd55b261d1.out
+###3df7682170aaccf8ca04290845ccae8af30598d5###

@@ -44,7 +44,7 @@ struct HomeView: View {
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.white)
                 if !authVM.displayName.isEmpty {
-                    Text(authVM.displayName)
+                    Text(authVM.playerProfile?.firstName ?? authVM.displayName.components(separatedBy: " ").first ?? authVM.displayName)
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.subtitleColor)
                 }
