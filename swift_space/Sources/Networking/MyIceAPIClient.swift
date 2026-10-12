@@ -299,6 +299,19 @@ actor MyIceAPIClient {
         saveCookiesToKeychain()
         // Also persist the real player_id (extracted from HTML, differs from cookie)
         KeychainHelper.save(playerId, forKey: "playerId")
+
+        // Extract and save player profile from the dashboard HTML we already have
+        let profileHTML: String
+        if !pageToScan.isEmpty {
+            profileHTML = pageToScan
+        } else {
+            profileHTML = dashboardHTML
+        }
+        if !profileHTML.isEmpty {
+            let profile = extractPlayerProfile(from: profileHTML)
+            profile.save()
+        }
+
         logger.info("Login erfolgreich fuer Spieler \(self.playerId)")
     }
 
@@ -378,6 +391,108 @@ actor MyIceAPIClient {
     var currentPlayerId: String { playerId }
     var currentSeasonId: String { seasonId }
     var currentClubId: String { clubId }
+
+    // MARK: - Profile Extraction
+
+    /// Extracts player profile data from the dashboard HTML page.
+    /// The dashboard contains form fields with the player's personal data.
+    func extractPlayerProfile(from html: String) -> PlayerProfile {
+        var profile = PlayerProfile()
+
+        // Extract input field values: name="fieldName" ... value="fieldValue"
+        func inputValue(_ name: String) -> String {
+            // Match both orderings: name before value, and value before name
+            let patterns = [
+                "name=\"\(name)\"[^>]*value=\"([^\"]*)\"",
+                "value=\"([^\"]*)\"[^>]*name=\"\(name)\""
+            ]
+            for pattern in patterns {
+                if let range = html.range(of: pattern, options: .regularExpression) {
+                    let snippet = String(html[range])
+                    if let valRange = snippet.range(of: "value=\"([^\"]*)\"", options: .regularExpression) {
+                        let valSnippet = String(snippet[valRange])
+                        return String(valSnippet.dropFirst(7).dropLast(1))
+                    }
+                }
+            }
+            return ""
+        }
+
+        profile.firstName = inputValue("fname")
+        profile.lastName = inputValue("lname")
+        profile.dateOfBirth = inputValue("dob")
+        profile.zip = inputValue("zip")
+        profile.town = inputValue("town")
+
+        // Nationality from select: look for selected option
+        if let natRange = html.range(of: "name=\"nationality\"[^>]*>.*?selected[^>]*>([^<]*)", options: .regularExpression) {
+            let snippet = String(html[natRange])
+            if let optRange = snippet.range(of: ">([^<]+)$", options: .regularExpression) {
+                profile.nationality = String(snippet[optRange].dropFirst())
+            }
+        }
+
+        // Shoots hand from select
+        if let playsRange = html.range(of: "name=\"plays\"[^>]*>.*?selected[^>]*>([^<]*)", options: .regularExpression) {
+            let snippet = String(html[playsRange])
+            if let optRange = snippet.range(of: ">([^<]+)$", options: .regularExpression) {
+                let val = String(snippet[optRange].dropFirst()).trimmingCharacters(in: .whitespaces)
+                if val == "L" || val == "R" {
+                    profile.shootsHand = val
+                }
+            }
+        }
+
+        // Position from select
+        if let posRange = html.range(of: "name=\"default_pos\"[^>]*>.*?selected[^>]*>([^<]*)", options: .regularExpression) {
+            let snippet = String(html[posRange])
+            if let optRange = snippet.range(of: ">([^<]+)$", options: .regularExpression) {
+                let val = String(snippet[optRange].dropFirst()).trimmingCharacters(in: .whitespaces)
+                if ["G", "D", "F"].contains(val) {
+                    profile.position = val
+                }
+            }
+        }
+
+        // Address from textarea
+        if let addrRange = html.range(of: "name=\"address\"[^>]*>([^<]*)</textarea", options: .regularExpression) {
+            let snippet = String(html[addrRange])
+            if let contentRange = snippet.range(of: ">([^<]*)<", options: .regularExpression) {
+                profile.address = String(snippet[contentRange].dropFirst().dropLast())
+            }
+        }
+
+        // Club name: text near the club logo
+        if let clubRange = html.range(of: "clubs/[^\"]*\"[^>]*alt=\"([^\"]*)\"", options: .regularExpression) {
+            let snippet = String(html[clubRange])
+            if let altRange = snippet.range(of: "alt=\"([^\"]*)\"", options: .regularExpression) {
+                profile.clubName = String(snippet[altRange].dropFirst(5).dropLast(1))
+            }
+        }
+
+        // Club logo URL
+        if let logoRange = html.range(of: "src=\"([^\"]*clubs/[^\"]*)\"", options: .regularExpression) {
+            let snippet = String(html[logoRange])
+            profile.clubLogoURL = String(snippet.dropFirst(5).dropLast(1))
+        }
+
+        logger.info("Profil extrahiert: \(profile.fullName), Club: \(profile.clubName)")
+        return profile
+    }
+
+    /// Fetches and parses the player profile from the dashboard page.
+    func fetchPlayerProfile() async -> PlayerProfile? {
+        guard !cookies.isEmpty else { return nil }
+        guard let url = URL(string: "\(baseURL)/players/dashboard/") else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+        guard let (data, _) = try? await session.data(for: request),
+              let html = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return extractPlayerProfile(from: html)
+    }
 
     // MARK: - Helpers
 

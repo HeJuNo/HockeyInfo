@@ -13,12 +13,14 @@ class AuthViewModel {
     var hasSavedCredentials = false
     var playerName = ""
     var teamName = ""
+    var playerProfile: PlayerProfile?
 
     private let logger = Logger(subsystem: "com.abacusai.hockeyinfo", category: "Auth")
 
     init() {
         hasSavedCredentials = KeychainHelper.email != nil && KeychainHelper.password != nil
         loadPlayerInfo()
+        playerProfile = PlayerProfile.load()
         Task {
             await tryRestoreSession()
         }
@@ -44,6 +46,7 @@ class AuthViewModel {
         let valid = await MyIceAPIClient.shared.validateSession()
         if valid {
             loadPlayerInfo()
+            playerProfile = PlayerProfile.load()
             isAuthenticated = true
             logger.info("Session wiederhergestellt")
         } else {
@@ -52,6 +55,7 @@ class AuthViewModel {
             let relogged = await MyIceAPIClient.shared.reloginIfNeeded()
             if relogged {
                 loadPlayerInfo()
+                playerProfile = PlayerProfile.load()
                 isAuthenticated = true
                 logger.info("Re-Login erfolgreich")
             } else {
@@ -75,6 +79,7 @@ class AuthViewModel {
                 KeychainHelper.password = password
             }
             loadPlayerInfo()
+            playerProfile = PlayerProfile.load()
             isAuthenticated = true
             logger.info("Login erfolgreich")
         } catch {
@@ -124,14 +129,17 @@ class AuthViewModel {
         password = ""
         playerName = ""
         teamName = ""
+        playerProfile = nil
         hasSavedCredentials = false
         UserDefaults.standard.removeObject(forKey: "cachedPractices")
         UserDefaults.standard.removeObject(forKey: "cachedGames")
         UserDefaults.standard.removeObject(forKey: "lastSyncDate")
+        UserDefaults.standard.removeObject(forKey: "playerProfile")
     }
 
-    /// Displayable greeting name: player name, or email prefix, or empty
+    /// Displayable greeting name: full profile name, player cookie name, or email prefix
     var displayName: String {
+        if let p = playerProfile, !p.fullName.isEmpty { return p.fullName }
         if !playerName.isEmpty { return playerName }
         if let e = KeychainHelper.email {
             return e.components(separatedBy: "@").first ?? ""

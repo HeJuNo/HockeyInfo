@@ -17,6 +17,9 @@ struct HomeView: View {
         ScrollView {
             VStack(spacing: 20) {
                 headerSection
+                if let profile = authVM.playerProfile {
+                    playerProfileCard(profile)
+                }
                 syncPill
                 if let practice = dataVM.nextPractice {
                     nextTrainingCard(practice)
@@ -49,6 +52,71 @@ struct HomeView: View {
             Spacer()
             Image(systemName: "bell.fill")
                 .font(.title3)
+                .foregroundStyle(AppTheme.subtitleColor)
+        }
+    }
+
+    // MARK: - Player Profile Card
+    private func playerProfileCard(_ profile: PlayerProfile) -> some View {
+        HStack(spacing: 16) {
+            // Club logo or player icon
+            if !profile.clubLogoURL.isEmpty, let url = URL(string: profile.clubLogoURL) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 44))
+                        .foregroundStyle(AppTheme.accent)
+                }
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(AppTheme.accent)
+                    .frame(width: 56, height: 56)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                if !profile.fullName.isEmpty {
+                    Text(profile.fullName)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                }
+                if !profile.clubName.isEmpty {
+                    Text(profile.clubName)
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.accent)
+                }
+                HStack(spacing: 12) {
+                    if let age = profile.age {
+                        profileTag(icon: "calendar", text: "\(age) Jahre")
+                    }
+                    if !profile.nationality.isEmpty {
+                        profileTag(icon: "flag.fill", text: profile.nationality)
+                    }
+                    if !profile.shootsLabel.isEmpty {
+                        profileTag(icon: "hockey.puck.fill", text: profile.shootsLabel)
+                    }
+                    if !profile.positionLabel.isEmpty {
+                        profileTag(icon: "person.fill", text: profile.positionLabel)
+                    }
+                }
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .glassCard()
+    }
+
+    private func profileTag(icon: String, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundStyle(AppTheme.accent)
+            Text(text)
+                .font(.caption)
                 .foregroundStyle(AppTheme.subtitleColor)
         }
     }

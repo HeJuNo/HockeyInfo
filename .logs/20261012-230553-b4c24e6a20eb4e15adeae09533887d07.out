@@ -1,0 +1,6 @@
+[main 9d4b9f6] Kritischer Fix: player_id wird jetzt aus dem Dashboard-HTML extrahiert statt aus dem Cookie mih_v3_cookid (der eine andere ID enthält). Dadurch werden Trainings und Spiele korrekt geladen.
+ 5 files changed, 49 insertions(+), 4 deletions(-)
+ create mode 100644 .logs/20261012-225532-72665d736d554e9da922a04b1ab0aea5.retcode
+ create mode 100644 .logs/20261012-230553-b4c24e6a20eb4e15adeae09533887d07.err
+ create mode 100644 .logs/20261012-230553-b4c24e6a20eb4e15adeae09533887d07.out
+###9d4b9f6f51df1092caa4ebcb99eda28ad02855d2###
