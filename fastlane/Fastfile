@@ -148,8 +148,17 @@ platform :ios do
       targets: [TARGET]
     )
 
-    xcargs = "CURRENT_PROJECT_VERSION=#{build_number}"
+    # Info.plist direkt aktualisieren, da XcodeGen CFBundleVersion literal setzt
+    # und xcargs die generierten Werte nicht zuverlaessig ueberschreiben
+    info_plist_path = "#{GITHUB_WORKSPACE}/swift_space/Info.plist"
+    set_info_plist_value(path: info_plist_path, key: "CFBundleVersion", value: build_number.to_s)
+
     app_version = ENV["APP_VERSION"].to_s.strip
+    unless app_version.empty?
+      set_info_plist_value(path: info_plist_path, key: "CFBundleShortVersionString", value: app_version)
+    end
+
+    xcargs = "CURRENT_PROJECT_VERSION=#{build_number}"
     xcargs += " MARKETING_VERSION=#{app_version}" unless app_version.empty?
 
     build_app(
