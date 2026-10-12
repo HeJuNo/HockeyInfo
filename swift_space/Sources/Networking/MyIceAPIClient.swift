@@ -42,6 +42,8 @@ actor MyIceAPIClient {
         let newCookies = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: url)
         for newCookie in newCookies {
             cookies.removeAll { $0.name == newCookie.name }
+            // Skip cookies with "deleted" values (server uses these for session cleanup)
+            if newCookie.value.lowercased() == "deleted" { continue }
             cookies.append(newCookie)
         }
     }
@@ -150,18 +152,31 @@ actor MyIceAPIClient {
     // MARK: - Login
 
     func login(email: String, password: String) async throws {
-        // Step 1: GET the login page first to establish a PHPSESSID
-        if let loginPageURL = URL(string: "\(baseURL)/") {
+        // Clear any stale cookies from previous sessions
+        cookies.removeAll()
+        playerId = ""
+        seasonId = ""
+        clubId = ""
+
+        // Step 1: GET the login page first to establish a fresh PHPSESSID
+        guard let loginPageURL = URL(string: "\(baseURL)/") else {
+            throw MyIceError.invalidURL
+        }
+        do {
             var pageReq = URLRequest(url: loginPageURL)
             pageReq.httpMethod = "GET"
-            if let (_, pageResp) = try? await session.data(for: pageReq),
-               let httpResp = pageResp as? HTTPURLResponse {
-                extractCookies(from: httpResp, url: loginPageURL)
-                logger.info("Initiale Cookies erfasst: \(self.cookies.count)")
+            pageReq.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+            let (_, pageResp) = try await session.data(for: pageReq)
+            if let httpResp = pageResp as? HTTPURLResponse {
+                extractCookies(from: httpResp, url: httpResp.url ?? loginPageURL)
             }
+            let cookieNames = cookies.map { "\($0.name)=\($0.value.prefix(8))..." }.joined(separator: ", ")
+            logger.info("Initiale Cookies: \(cookieNames)")
+        } catch {
+            logger.warning("Konnte Login-Seite nicht laden: \(error.localizedDescription) - fahre fort")
         }
 
-        // Step 2: POST login
+        // Step 2: POST login credentials
         guard let url = URL(string: "\(baseURL)/classes/process.php") else {
             throw MyIceError.invalidURL
         }
@@ -170,61 +185,74 @@ actor MyIceAPIClient {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.setValue(baseURL, forHTTPHeaderField: "Origin")
         request.setValue("\(baseURL)/", forHTTPHeaderField: "Referer")
-        request.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
 
-        let body = "login_email=\(urlEncode(email))&login_password=\(urlEncode(password))&sublogin=1&login_submit=1"
+        // Only send PHPSESSID cookie on login POST (not stale mih_v3_* cookies)
+        let phpSessionCookie = cookies.first { $0.name == "PHPSESSID" }
+        if let sessId = phpSessionCookie {
+            request.setValue("PHPSESSID=\(sessId.value)", forHTTPHeaderField: "Cookie")
+        }
+
+        let body = "login_email=\(formEncode(email))&login_password=\(formEncode(password))&sublogin=1&login_submit=1"
         request.httpBody = body.data(using: .utf8)
 
         logger.info("Login-Versuch fuer \(email)")
 
-        // Follow redirects manually to capture cookies
-        var currentRequest = request
-        var redirectCount = 0
-        while redirectCount < 10 {
-            let (data, response) = try await session.data(for: currentRequest)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw MyIceError.invalidResponse
-            }
-            extractCookies(from: httpResponse, url: currentRequest.url!)
-            logger.info("Login Schritt \(redirectCount): Status \(httpResponse.statusCode), Cookies: \(self.cookies.count)")
+        // URLSession follows redirects automatically, so we get the final response.
+        // Each hop's Set-Cookie headers are captured by the URL loading system,
+        // but since we have httpShouldSetCookies=false we must capture them ourselves.
+        // We use a delegate-less session, so data(for:) returns the FINAL response.
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MyIceError.invalidResponse
+        }
+        extractCookies(from: httpResponse, url: httpResponse.url ?? url)
 
-            if (300...399).contains(httpResponse.statusCode),
-               let location = httpResponse.value(forHTTPHeaderField: "Location") {
-                let redirectURL: URL
-                if location.hasPrefix("http") {
-                    guard let u = URL(string: location) else { throw MyIceError.invalidURL }
-                    redirectURL = u
-                } else {
-                    guard let u = URL(string: "\(baseURL)\(location)") else { throw MyIceError.invalidURL }
-                    redirectURL = u
+        logger.info("Login Response: Status \(httpResponse.statusCode), URL: \(httpResponse.url?.absoluteString ?? "nil")")
+        let cookieNames = cookies.map { $0.name }.joined(separator: ", ")
+        logger.info("Cookies nach Login: \(cookieNames)")
+
+        // After auto-redirect, we may need to follow the dashboard page to get mih_v3_* cookies
+        // The server often sets them on the redirect target, not the login response
+        if cookies.first(where: { $0.name == "mih_v3_cookid" }) == nil {
+            // Try loading the dashboard to get the player cookies
+            logger.info("Keine mih_v3 Cookies - lade Dashboard...")
+            if let dashURL = URL(string: "\(baseURL)/players/dashboard/") {
+                var dashReq = URLRequest(url: dashURL)
+                dashReq.httpMethod = "GET"
+                dashReq.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
+                dashReq.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+                if let (_, dashResp) = try? await session.data(for: dashReq),
+                   let dashHttp = dashResp as? HTTPURLResponse {
+                    extractCookies(from: dashHttp, url: dashHttp.url ?? dashURL)
+                    logger.info("Dashboard geladen: Status \(dashHttp.statusCode), Cookies: \(self.cookies.count)")
                 }
-                var newReq = URLRequest(url: redirectURL)
-                newReq.httpMethod = "GET"
-                newReq.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
-                newReq.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-                currentRequest = newReq
-                redirectCount += 1
-                continue
             }
+        }
 
-            // Non-redirect response; extract player data from cookies
-            extractPlayerData()
-            
-            // Log cookie names for debugging
-            let cookieNames = cookies.map { $0.name }.joined(separator: ", ")
-            logger.info("Cookies nach Login: \(cookieNames)")
-            logger.info("PlayerId=\(self.playerId), SeasonId=\(self.seasonId), ClubId=\(self.clubId)")
-            
-            if playerId.isEmpty {
-                let bodyStr = String(data: data, encoding: .utf8) ?? ""
-                logger.error("Login fehlgeschlagen, kein playerId Cookie. Body: \(bodyStr.prefix(500))")
+        // Extract player/season/club IDs from cookies
+        extractPlayerData()
+        
+        let playerCookies = cookies.filter { $0.name.hasPrefix("mih_v3_") }.map { "\($0.name)=\($0.value.prefix(8))..." }.joined(separator: ", ")
+        logger.info("mih_v3 Cookies: \(playerCookies)")
+        logger.info("PlayerId=\(self.playerId), SeasonId=\(self.seasonId), ClubId=\(self.clubId)")
+
+        if playerId.isEmpty || seasonId.isEmpty || clubId.isEmpty {
+            let bodyStr = String(data: data, encoding: .utf8) ?? ""
+            if bodyStr.contains("error") || bodyStr.contains("falsch") || bodyStr.contains("incorrect") {
+                logger.error("Login fehlgeschlagen: Server meldet Fehler")
                 throw MyIceError.loginFailed
             }
-            saveCookiesToKeychain()
-            logger.info("Login erfolgreich fuer Spieler \(self.playerId)")
-            return
+            // Maybe login worked but cookies not captured from auto-redirect
+            logger.error("Login unvollstaendig: playerId=\(self.playerId), seasonId=\(self.seasonId), clubId=\(self.clubId)")
+            logger.error("Response body: \(bodyStr.prefix(500))")
+            if playerId.isEmpty {
+                throw MyIceError.loginFailed
+            }
         }
-        throw MyIceError.tooManyRedirects
+        
+        saveCookiesToKeychain()
+        logger.info("Login erfolgreich fuer Spieler \(self.playerId)")
     }
 
     // MARK: - Fetch Data
@@ -306,8 +334,10 @@ actor MyIceAPIClient {
 
     // MARK: - Helpers
 
-    private func urlEncode(_ string: String) -> String {
-        string.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? string
+    private func formEncode(_ string: String) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return string.addingPercentEncoding(withAllowedCharacters: allowed) ?? string
     }
 }
 

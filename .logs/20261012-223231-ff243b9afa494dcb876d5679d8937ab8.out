@@ -1,0 +1,6 @@
+[main 0b7aed8] Kritische Bugfixes: DataTables-JSON-Wrapper für API-Responses, Typ-Korrektur (duration: Int, optionale Felder), Session-Validierung mit \"deleted\"-Cookie-Erkennung, verbesserter Login-Flow mit Vorab-PHPSESSID und Re-Login-Logik
+ 15 files changed, 253 insertions(+), 69 deletions(-)
+ create mode 100644 .logs/20261012-214631-6f251cf280424615974ee06aa7c5b58b.retcode
+ create mode 100644 .logs/20261012-223231-ff243b9afa494dcb876d5679d8937ab8.err
+ create mode 100644 .logs/20261012-223231-ff243b9afa494dcb876d5679d8937ab8.out
+###0b7aed87d38f69631b3d281d1dae95885d5cd42a###
