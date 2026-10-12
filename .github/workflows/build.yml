@@ -2,6 +2,9 @@ name: 4. HockeyInfo bauen
 run-name: HockeyInfo bauen (${{ github.ref_name }})
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
   schedule:
     # Am 1. jedes Monats um 06:17 UTC neu bauen, damit der TestFlight-Build
