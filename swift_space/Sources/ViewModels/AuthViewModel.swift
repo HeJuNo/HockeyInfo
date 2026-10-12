@@ -28,10 +28,10 @@ class AuthViewModel {
 
     private func loadPlayerInfo() {
         let name = KeychainHelper.playerName ?? ""
-        let team = KeychainHelper.teamName ?? ""
         // Filter out "deleted" or empty cookie artifacts
         playerName = (name.lowercased() == "deleted" || name.isEmpty) ? "" : name
-        teamName = (team.lowercased() == "deleted" || team.isEmpty) ? "" : team
+        // mih_v3_cookage is an age-group ID (e.g. 101), not a team name
+        teamName = ""
     }
 
     @MainActor
@@ -47,6 +47,13 @@ class AuthViewModel {
         if valid {
             loadPlayerInfo()
             playerProfile = PlayerProfile.load()
+            // If no profile cached yet, fetch it from the dashboard
+            if playerProfile == nil {
+                if let freshProfile = await MyIceAPIClient.shared.fetchPlayerProfile() {
+                    freshProfile.save()
+                    playerProfile = freshProfile
+                }
+            }
             isAuthenticated = true
             logger.info("Session wiederhergestellt")
         } else {

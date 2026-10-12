@@ -30,24 +30,57 @@ struct SettingsView: View {
     // MARK: - Profile
     private var profileSection: some View {
         VStack(spacing: 16) {
-            // Avatar
-            ZStack {
-                Circle()
-                    .fill(AppTheme.accent.opacity(0.2))
-                    .frame(width: 72, height: 72)
-                Text(initials)
-                    .font(.title.weight(.bold))
-                    .foregroundStyle(AppTheme.accent)
+            // Club logo or avatar
+            if let profile = authVM.playerProfile,
+               !profile.clubLogoURL.isEmpty,
+               let url = URL(string: profile.clubLogoURL) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    avatarCircle
+                }
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            } else {
+                avatarCircle
             }
 
-            Text(authVM.playerName)
+            Text(authVM.displayName)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.white)
 
-            if !authVM.teamName.isEmpty {
-                Text(authVM.teamName)
-                    .font(.subheadline)
-                    .foregroundStyle(AppTheme.subtitleColor)
+            if let profile = authVM.playerProfile {
+                if !profile.clubName.isEmpty {
+                    Text(profile.clubName)
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.accent)
+                }
+
+                HStack(spacing: 16) {
+                    if let age = profile.age {
+                        profileDetail(icon: "calendar", text: "\(age) Jahre")
+                    }
+                    if !profile.nationality.isEmpty {
+                        profileDetail(icon: "flag.fill", text: profile.nationality)
+                    }
+                    if !profile.shootsLabel.isEmpty {
+                        profileDetail(icon: "hockey.puck.fill", text: profile.shootsLabel)
+                    }
+                    if !profile.positionLabel.isEmpty {
+                        profileDetail(icon: "person.fill", text: profile.positionLabel)
+                    }
+                }
+
+                if !profile.town.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.accent)
+                        Text([profile.zip, profile.town].filter { !$0.isEmpty }.joined(separator: " "))
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.subtitleColor)
+                    }
+                }
             }
 
             HStack(spacing: 6) {
@@ -64,6 +97,28 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity)
         .padding(24)
         .glassCard()
+    }
+
+    private var avatarCircle: some View {
+        ZStack {
+            Circle()
+                .fill(AppTheme.accent.opacity(0.2))
+                .frame(width: 72, height: 72)
+            Text(initials)
+                .font(.title.weight(.bold))
+                .foregroundStyle(AppTheme.accent)
+        }
+    }
+
+    private func profileDetail(icon: String, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundStyle(AppTheme.accent)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(AppTheme.subtitleColor)
+        }
     }
 
     // MARK: - Account
@@ -136,7 +191,8 @@ struct SettingsView: View {
     }
 
     private var initials: String {
-        let parts = authVM.playerName.split(separator: " ")
+        let name = authVM.displayName
+        let parts = name.split(separator: " ")
         let first = parts.first?.prefix(1) ?? ""
         let last = parts.count > 1 ? parts.last!.prefix(1) : ""
         return "\(first)\(last)".uppercased()

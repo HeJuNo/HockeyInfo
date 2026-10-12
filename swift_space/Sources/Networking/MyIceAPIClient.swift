@@ -67,8 +67,7 @@ actor MyIceAPIClient {
                 if isValid { clubId = val }
             case "mih_v3_cookname":
                 if isValid { KeychainHelper.playerName = val }
-            case "mih_v3_cookage":
-                if isValid { KeychainHelper.teamName = val }
+            // mih_v3_cookage is an age-group ID (e.g. 101), NOT a team name
             default: break
             }
         }

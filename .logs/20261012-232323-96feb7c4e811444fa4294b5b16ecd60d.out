@@ -1,0 +1,7 @@
+[main 28fe602] Spieler-Profil: Vor-/Nachname, Geburtsdatum/Alter, Nationalität, Club (mit Logo), Schusshand und Position werden aus der Dashboard-Seite extrahiert und als Profilkarte auf der Startseite angezeigt
+ 8 files changed, 258 insertions(+), 1 deletion(-)
+ create mode 100644 .logs/20261012-230553-b4c24e6a20eb4e15adeae09533887d07.retcode
+ create mode 100644 .logs/20261012-232323-96feb7c4e811444fa4294b5b16ecd60d.err
+ create mode 100644 .logs/20261012-232323-96feb7c4e811444fa4294b5b16ecd60d.out
+ create mode 100644 swift_space/Sources/Models/PlayerProfile.swift
+###28fe602242fe638e348c4e8caac01a3e8975b311###
