@@ -55,8 +55,12 @@ actor MyIceAPIClient {
             // Skip "deleted" cookie values (server sets these when session expires)
             let isValid = !val.isEmpty && val.lowercased() != "deleted" && val != "0"
             switch c.name {
+            // NOTE: mih_v3_cookid is NOT the player_id for API calls.
+            // The real player_id is extracted from the HTML page JS.
+            // We still store cookid as fallback but prefer HTML-extracted ID.
             case "mih_v3_cookid":
-                if isValid { playerId = val }
+                // Only set as fallback if no real playerId is known yet
+                if isValid && playerId.isEmpty { playerId = val }
             case "mih_v3_cooksea":
                 if isValid { seasonId = val }
             case "mih_v3_cookclub":
@@ -230,7 +234,10 @@ actor MyIceAPIClient {
         let cookieNames = cookies.map { $0.name }.joined(separator: ", ")
         logger.info("Cookies nach Login-POST: \(cookieNames)")
 
-        // Follow the redirect manually, now with all cookies from the 302
+        // Follow the redirect manually, now with all cookies from the 302.
+        // Also load the practices page to extract the REAL player_id from JS
+        // (mih_v3_cookid != player_id used in API calls)
+        var dashboardHTML = ""
         if httpResponse.statusCode == 302,
            let location = httpResponse.value(forHTTPHeaderField: "Location") {
             let redirectURL = URL(string: location, relativeTo: url)!.absoluteURL
@@ -239,15 +246,44 @@ actor MyIceAPIClient {
             redirectReq.httpMethod = "GET"
             redirectReq.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
             redirectReq.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-            if let (_, dashResp) = try? await session.data(for: redirectReq),
+            if let (dashData, dashResp) = try? await session.data(for: redirectReq),
                let dashHttp = dashResp as? HTTPURLResponse {
                 extractCookies(from: dashHttp, url: dashHttp.url ?? redirectURL)
+                dashboardHTML = String(data: dashData, encoding: .utf8) ?? ""
                 logger.info("Dashboard geladen: Status \(dashHttp.statusCode), Cookies: \(self.cookies.count)")
             }
         }
 
-        // Extract player/season/club IDs from cookies
+        // Extract season/club IDs from cookies
         extractPlayerData()
+
+        // Extract the REAL player_id from the dashboard/practices page JS.
+        // The cookie mih_v3_cookid is NOT the player_id used in API calls.
+        let pageToScan: String
+        if !dashboardHTML.isEmpty {
+            pageToScan = dashboardHTML
+        } else {
+            // Load practices page as fallback
+            var practicesReq = URLRequest(url: URL(string: "\(baseURL)/players/practices/")!)
+            practicesReq.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
+            practicesReq.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+            if let (pageData, _) = try? await session.data(for: practicesReq) {
+                pageToScan = String(data: pageData, encoding: .utf8) ?? ""
+            } else {
+                pageToScan = ""
+            }
+        }
+
+        if let match = pageToScan.range(of: #"player_id[:\s]*['\"]?(\d+)"#, options: .regularExpression) {
+            let snippet = String(pageToScan[match])
+            let digits = snippet.filter { $0.isNumber }
+            if !digits.isEmpty {
+                playerId = digits
+                logger.info("player_id aus HTML extrahiert: \(digits)")
+            }
+        } else if !pageToScan.isEmpty {
+            logger.warning("Konnte player_id nicht aus HTML extrahieren, nutze cookid")
+        }
         
         let playerCookies = cookies.filter { $0.name.hasPrefix("mih_v3_") }.map { "\($0.name)=\($0.value.prefix(8))..." }.joined(separator: ", ")
         logger.info("mih_v3 Cookies: \(playerCookies)")
@@ -261,6 +297,8 @@ actor MyIceAPIClient {
         }
         
         saveCookiesToKeychain()
+        // Also persist the real player_id (extracted from HTML, differs from cookie)
+        KeychainHelper.save(playerId, forKey: "playerId")
         logger.info("Login erfolgreich fuer Spieler \(self.playerId)")
     }
 
