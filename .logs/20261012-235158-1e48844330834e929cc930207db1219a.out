@@ -1,0 +1,6 @@
+[main b793d5d] Upgraded fastlane from 2.237.0 to 2.241.0 (latest) to fix build failure
+ 4 files changed, 7 insertions(+)
+ create mode 100644 .logs/20261012-233313-62460094f9bb4f8baf88a9aa404659a2.retcode
+ create mode 100644 .logs/20261012-235158-1e48844330834e929cc930207db1219a.err
+ create mode 100644 .logs/20261012-235158-1e48844330834e929cc930207db1219a.out
+###b793d5d3646f916d7756e8e5d7006fb164af793a###
