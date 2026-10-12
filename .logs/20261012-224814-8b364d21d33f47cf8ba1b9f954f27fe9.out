@@ -1,0 +1,6 @@
+[main 3defba4] Login-Fix: NoRedirectDelegate fängt 302-Response ab und extrahiert Cookies korrekt, bevor der Redirect manuell mit allen Auth-Cookies gefolgt wird
+ 5 files changed, 44 insertions(+), 29 deletions(-)
+ create mode 100644 .logs/20261012-224316-0f0d0299dcdc4ed7a536a8fce0d34cfc.retcode
+ create mode 100644 .logs/20261012-224814-8b364d21d33f47cf8ba1b9f954f27fe9.err
+ create mode 100644 .logs/20261012-224814-8b364d21d33f47cf8ba1b9f954f27fe9.out
+###3defba480678f074a0e53322f421c65e96500e01###

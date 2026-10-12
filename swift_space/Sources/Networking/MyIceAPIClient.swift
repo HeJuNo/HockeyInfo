@@ -40,10 +40,11 @@ actor MyIceAPIClient {
     private func extractCookies(from response: HTTPURLResponse, url: URL) {
         guard let headerFields = response.allHeaderFields as? [String: String] else { return }
         let newCookies = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: url)
+        logger.info("extractCookies: \(newCookies.count) Cookies aus Response, URL: \(url.absoluteString)")
         for newCookie in newCookies {
-            cookies.removeAll { $0.name == newCookie.name }
-            // Skip cookies with "deleted" values (server uses these for session cleanup)
+            // Skip cookies with "deleted" values FIRST — never remove a valid existing cookie for them
             if newCookie.value.lowercased() == "deleted" { continue }
+            cookies.removeAll { $0.name == newCookie.name }
             cookies.append(newCookie)
         }
     }
