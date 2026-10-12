@@ -1,0 +1,6 @@
+[main 5b491f4] Login auf multipart/form-data umgestellt – der Server akzeptiert kein application/x-www-form-urlencoded
+ 5 files changed, 25 insertions(+), 3 deletions(-)
+ create mode 100644 .logs/20261012-223832-3c5308183d194eb8adf5ebec107e74d3.retcode
+ create mode 100644 .logs/20261012-224316-0f0d0299dcdc4ed7a536a8fce0d34cfc.err
+ create mode 100644 .logs/20261012-224316-0f0d0299dcdc4ed7a536a8fce0d34cfc.out
+###5b491f41c96328e1eda048969b68835f2d2aefbf###

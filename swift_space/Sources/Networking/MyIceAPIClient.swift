@@ -213,11 +213,13 @@ actor MyIceAPIClient {
 
         logger.info("Login-Versuch fuer \(email)")
 
-        // URLSession follows redirects automatically, so we get the final response.
-        // Each hop's Set-Cookie headers are captured by the URL loading system,
-        // but since we have httpShouldSetCookies=false we must capture them ourselves.
-        // We use a delegate-less session, so data(for:) returns the FINAL response.
-        let (data, response) = try await session.data(for: request)
+        // Use a no-redirect session so we can capture Set-Cookie from the 302 response.
+        // URLSession's auto-redirect loses cookies when httpShouldSetCookies=false.
+        let noRedirectDelegate = NoRedirectDelegate()
+        let loginSession = URLSession(configuration: session.configuration, delegate: noRedirectDelegate, delegateQueue: nil)
+        defer { loginSession.finishTasksAndInvalidate() }
+
+        let (_, response) = try await loginSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw MyIceError.invalidResponse
         }
@@ -225,23 +227,21 @@ actor MyIceAPIClient {
 
         logger.info("Login Response: Status \(httpResponse.statusCode), URL: \(httpResponse.url?.absoluteString ?? "nil")")
         let cookieNames = cookies.map { $0.name }.joined(separator: ", ")
-        logger.info("Cookies nach Login: \(cookieNames)")
+        logger.info("Cookies nach Login-POST: \(cookieNames)")
 
-        // After auto-redirect, we may need to follow the dashboard page to get mih_v3_* cookies
-        // The server often sets them on the redirect target, not the login response
-        if cookies.first(where: { $0.name == "mih_v3_cookid" }) == nil {
-            // Try loading the dashboard to get the player cookies
-            logger.info("Keine mih_v3 Cookies - lade Dashboard...")
-            if let dashURL = URL(string: "\(baseURL)/players/dashboard/") {
-                var dashReq = URLRequest(url: dashURL)
-                dashReq.httpMethod = "GET"
-                dashReq.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
-                dashReq.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-                if let (_, dashResp) = try? await session.data(for: dashReq),
-                   let dashHttp = dashResp as? HTTPURLResponse {
-                    extractCookies(from: dashHttp, url: dashHttp.url ?? dashURL)
-                    logger.info("Dashboard geladen: Status \(dashHttp.statusCode), Cookies: \(self.cookies.count)")
-                }
+        // Follow the redirect manually, now with all cookies from the 302
+        if httpResponse.statusCode == 302,
+           let location = httpResponse.value(forHTTPHeaderField: "Location") {
+            let redirectURL = URL(string: location, relativeTo: url)!.absoluteURL
+            logger.info("Folge Redirect zu: \(redirectURL.absoluteString)")
+            var redirectReq = URLRequest(url: redirectURL)
+            redirectReq.httpMethod = "GET"
+            redirectReq.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
+            redirectReq.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+            if let (_, dashResp) = try? await session.data(for: redirectReq),
+               let dashHttp = dashResp as? HTTPURLResponse {
+                extractCookies(from: dashHttp, url: dashHttp.url ?? redirectURL)
+                logger.info("Dashboard geladen: Status \(dashHttp.statusCode), Cookies: \(self.cookies.count)")
             }
         }
 
@@ -253,14 +253,7 @@ actor MyIceAPIClient {
         logger.info("PlayerId=\(self.playerId), SeasonId=\(self.seasonId), ClubId=\(self.clubId)")
 
         if playerId.isEmpty || seasonId.isEmpty || clubId.isEmpty {
-            let bodyStr = String(data: data, encoding: .utf8) ?? ""
-            if bodyStr.contains("error") || bodyStr.contains("falsch") || bodyStr.contains("incorrect") {
-                logger.error("Login fehlgeschlagen: Server meldet Fehler")
-                throw MyIceError.loginFailed
-            }
-            // Maybe login worked but cookies not captured from auto-redirect
             logger.error("Login unvollstaendig: playerId=\(self.playerId), seasonId=\(self.seasonId), clubId=\(self.clubId)")
-            logger.error("Response body: \(bodyStr.prefix(500))")
             if playerId.isEmpty {
                 throw MyIceError.loginFailed
             }
@@ -353,6 +346,21 @@ actor MyIceAPIClient {
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
         return string.addingPercentEncoding(withAllowedCharacters: allowed) ?? string
+    }
+}
+
+// MARK: - No-Redirect Delegate
+/// Blocks automatic redirects so we can capture Set-Cookie headers from the 302 response.
+private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        // Return nil to prevent the redirect — we handle it manually
+        completionHandler(nil)
     }
 }
 
