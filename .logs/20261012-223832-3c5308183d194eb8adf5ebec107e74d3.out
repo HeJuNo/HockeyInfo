@@ -1,0 +1,6 @@
+[main bd4eacc] Login-Fix: formEncode für korrekte URL-Kodierung von E-Mail/Passwort, Cookie-Bereinigung (deleted-Werte gefiltert), verbesserter Login-Flow mit Session-Cookie-Handling
+ 5 files changed, 89 insertions(+), 52 deletions(-)
+ create mode 100644 .logs/20261012-223231-ff243b9afa494dcb876d5679d8937ab8.retcode
+ create mode 100644 .logs/20261012-223832-3c5308183d194eb8adf5ebec107e74d3.err
+ create mode 100644 .logs/20261012-223832-3c5308183d194eb8adf5ebec107e74d3.out
+###bd4eacc32524384bc4b2a99a500d5557322d6120###

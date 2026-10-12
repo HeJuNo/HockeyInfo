@@ -182,7 +182,10 @@ actor MyIceAPIClient {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        // Build multipart/form-data body (the server requires this format)
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue(baseURL, forHTTPHeaderField: "Origin")
         request.setValue("\(baseURL)/", forHTTPHeaderField: "Referer")
         request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
@@ -193,8 +196,20 @@ actor MyIceAPIClient {
             request.setValue("PHPSESSID=\(sessId.value)", forHTTPHeaderField: "Cookie")
         }
 
-        let body = "login_email=\(formEncode(email))&login_password=\(formEncode(password))&sublogin=1&login_submit=1"
-        request.httpBody = body.data(using: .utf8)
+        let fields: [(String, String)] = [
+            ("login_email", email),
+            ("login_password", password),
+            ("sublogin", "1"),
+            ("login_submit", "")
+        ]
+        var bodyData = Data()
+        for (name, value) in fields {
+            bodyData.append("--\(boundary)\r\n".data(using: .utf8)!)
+            bodyData.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+            bodyData.append("\(value)\r\n".data(using: .utf8)!)
+        }
+        bodyData.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = bodyData
 
         logger.info("Login-Versuch fuer \(email)")
 
