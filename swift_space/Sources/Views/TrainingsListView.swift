@@ -91,7 +91,7 @@ struct TrainingsListView: View {
                         Text("\(p.weekday), \(formatDate(p.date))")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
-                        Text("\(p.time_start) \u{2013} \(p.time_end)")
+                        Text("\(p.displayTimeStart) \u{2013} \(p.displayTimeEnd)")
                             .font(.subheadline)
                             .foregroundStyle(AppTheme.accent)
                     }
@@ -105,8 +105,8 @@ struct TrainingsListView: View {
                         .foregroundStyle(AppTheme.subtitleColor)
                 }
 
-                if !p.notes.isEmpty {
-                    Text(p.notes)
+                if !p.displayNotes.isEmpty {
+                    Text(p.displayNotes)
                         .font(.caption)
                         .foregroundStyle(AppTheme.subtitleColor)
                         .italic()

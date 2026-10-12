@@ -40,6 +40,9 @@ class DataViewModel {
             UserDefaults.standard.set(lastSyncDate, forKey: "lastSyncDate")
             cacheData()
             logger.info("Daten aktualisiert: \(self.practices.count) Trainings, \(self.games.count) Spiele")
+        } catch MyIceError.notAuthenticated {
+            errorMessage = "Sitzung abgelaufen. Bitte erneut anmelden."
+            logger.error("Session abgelaufen beim Laden der Daten")
         } catch {
             errorMessage = error.localizedDescription
             logger.error("Fehler beim Laden: \(error.localizedDescription)")
@@ -88,8 +91,6 @@ class DataViewModel {
         let cal = Calendar.current
         let startOfWeek = cal.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
         let endOfWeek = cal.date(byAdding: .day, value: 7, to: startOfWeek)!
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd"
         let t = practices.filter {
             guard let d = $0.parsedDate else { return false }
             return d >= startOfWeek && d < endOfWeek

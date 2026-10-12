@@ -1,6 +1,16 @@
 import Foundation
 import os.log
 
+// MARK: - DataTables Response Wrapper
+/// The myice.hockey API wraps all list responses in a DataTables envelope.
+/// The actual items live in the `data` array.
+struct DataTablesResponse<T: Decodable>: Decodable {
+    let draw: Int
+    let recordsTotal: Int
+    let recordsFiltered: Int
+    let data: [T]
+}
+
 actor MyIceAPIClient {
     static let shared = MyIceAPIClient()
     private let logger = Logger(subsystem: "com.abacusai.hockeyinfo", category: "API")
@@ -38,14 +48,20 @@ actor MyIceAPIClient {
 
     private func extractPlayerData() {
         for c in cookies {
+            let val = c.value.removingPercentEncoding ?? c.value
+            // Skip "deleted" cookie values (server sets these when session expires)
+            let isValid = !val.isEmpty && val.lowercased() != "deleted" && val != "0"
             switch c.name {
-            case "mih_v3_cookid": playerId = c.value
-            case "mih_v3_cooksea": seasonId = c.value
-            case "mih_v3_cookclub": clubId = c.value
+            case "mih_v3_cookid":
+                if isValid { playerId = val }
+            case "mih_v3_cooksea":
+                if isValid { seasonId = val }
+            case "mih_v3_cookclub":
+                if isValid { clubId = val }
             case "mih_v3_cookname":
-                KeychainHelper.playerName = c.value.removingPercentEncoding ?? c.value
+                if isValid { KeychainHelper.playerName = val }
             case "mih_v3_cookage":
-                KeychainHelper.teamName = c.value.removingPercentEncoding ?? c.value
+                if isValid { KeychainHelper.teamName = val }
             default: break
             }
         }
@@ -85,12 +101,67 @@ actor MyIceAPIClient {
         playerId = KeychainHelper.load("playerId") ?? ""
         seasonId = KeychainHelper.load("seasonId") ?? ""
         clubId = KeychainHelper.load("clubId") ?? ""
-        return !playerId.isEmpty
+        // Invalidate if any essential value is "deleted" (stale session artifact)
+        if playerId.lowercased() == "deleted" { playerId = "" }
+        if seasonId.lowercased() == "deleted" { seasonId = "" }
+        if clubId.lowercased() == "deleted" { clubId = "" }
+        return !playerId.isEmpty && !seasonId.isEmpty && !clubId.isEmpty
+    }
+
+    /// Validates the current session by making a lightweight request.
+    /// Returns true if the session is still valid and returns data.
+    func validateSession() async -> Bool {
+        guard !playerId.isEmpty, !seasonId.isEmpty, !clubId.isEmpty else {
+            logger.warning("Session ungueltig: playerId/seasonId/clubId leer")
+            return false
+        }
+        do {
+            let result: [Practice] = try await fetchEvents(eventType: "p", minDate: nil, maxDate: nil)
+            if result.isEmpty {
+                logger.warning("Session-Validierung: 0 Datensaetze zurueck - Session vermutlich ungueltig")
+                return false
+            }
+            logger.info("Session validiert, \(result.count) Trainings-Datensaetze")
+            return true
+        } catch MyIceError.notAuthenticated {
+            logger.warning("Session abgelaufen")
+            return false
+        } catch {
+            logger.info("Session-Validierung fehlgeschlagen: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Attempts to re-login using saved credentials from Keychain.
+    func reloginIfNeeded() async -> Bool {
+        guard let email = KeychainHelper.email,
+              let password = KeychainHelper.password else {
+            return false
+        }
+        do {
+            try await login(email: email, password: password)
+            return true
+        } catch {
+            logger.error("Re-Login fehlgeschlagen: \(error.localizedDescription)")
+            return false
+        }
     }
 
     // MARK: - Login
 
     func login(email: String, password: String) async throws {
+        // Step 1: GET the login page first to establish a PHPSESSID
+        if let loginPageURL = URL(string: "\(baseURL)/") {
+            var pageReq = URLRequest(url: loginPageURL)
+            pageReq.httpMethod = "GET"
+            if let (_, pageResp) = try? await session.data(for: pageReq),
+               let httpResp = pageResp as? HTTPURLResponse {
+                extractCookies(from: httpResp, url: loginPageURL)
+                logger.info("Initiale Cookies erfasst: \(self.cookies.count)")
+            }
+        }
+
+        // Step 2: POST login
         guard let url = URL(string: "\(baseURL)/classes/process.php") else {
             throw MyIceError.invalidURL
         }
@@ -99,19 +170,23 @@ actor MyIceAPIClient {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.setValue(baseURL, forHTTPHeaderField: "Origin")
         request.setValue("\(baseURL)/", forHTTPHeaderField: "Referer")
+        request.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
 
         let body = "login_email=\(urlEncode(email))&login_password=\(urlEncode(password))&sublogin=1&login_submit=1"
         request.httpBody = body.data(using: .utf8)
 
+        logger.info("Login-Versuch fuer \(email)")
+
         // Follow redirects manually to capture cookies
         var currentRequest = request
         var redirectCount = 0
-        while redirectCount < 5 {
+        while redirectCount < 10 {
             let (data, response) = try await session.data(for: currentRequest)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw MyIceError.invalidResponse
             }
             extractCookies(from: httpResponse, url: currentRequest.url!)
+            logger.info("Login Schritt \(redirectCount): Status \(httpResponse.statusCode), Cookies: \(self.cookies.count)")
 
             if (300...399).contains(httpResponse.statusCode),
                let location = httpResponse.value(forHTTPHeaderField: "Location") {
@@ -126,17 +201,23 @@ actor MyIceAPIClient {
                 var newReq = URLRequest(url: redirectURL)
                 newReq.httpMethod = "GET"
                 newReq.setValue(cookieHeader(), forHTTPHeaderField: "Cookie")
+                newReq.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
                 currentRequest = newReq
                 redirectCount += 1
                 continue
             }
 
-            // Check if login was successful by looking for player cookies
+            // Non-redirect response; extract player data from cookies
             extractPlayerData()
+            
+            // Log cookie names for debugging
+            let cookieNames = cookies.map { $0.name }.joined(separator: ", ")
+            logger.info("Cookies nach Login: \(cookieNames)")
+            logger.info("PlayerId=\(self.playerId), SeasonId=\(self.seasonId), ClubId=\(self.clubId)")
+            
             if playerId.isEmpty {
-                // Check response body for error
                 let bodyStr = String(data: data, encoding: .utf8) ?? ""
-                logger.error("Login fehlgeschlagen: \(bodyStr.prefix(200))")
+                logger.error("Login fehlgeschlagen, kein playerId Cookie. Body: \(bodyStr.prefix(500))")
                 throw MyIceError.loginFailed
             }
             saveCookiesToKeychain()
@@ -180,24 +261,37 @@ actor MyIceAPIClient {
         ]
         if let min = minDate { bodyParts.append("minDate=\(min)") }
         if let max = maxDate { bodyParts.append("maxDate=\(max)") }
-        request.httpBody = bodyParts.joined(separator: "&").data(using: .utf8)
+        let bodyStr = bodyParts.joined(separator: "&")
+        request.httpBody = bodyStr.data(using: .utf8)
+
+        logger.info("Lade \(eventType == "p" ? "Trainings" : "Spiele"): POST playersfilter")
+        logger.info("Body: type=filter&player_id=***&event_type=\(eventType)&season=\(self.seasonId)&club=\(self.clubId)")
 
         let (data, response) = try await session.data(for: request)
         if let httpResp = response as? HTTPURLResponse {
             extractCookies(from: httpResp, url: url)
+            logger.info("Response Status: \(httpResp.statusCode)")
             if httpResp.statusCode == 302 || httpResp.statusCode == 401 {
                 throw MyIceError.notAuthenticated
             }
         }
 
+        // Decode the DataTables wrapper and extract the data array
         let decoder = JSONDecoder()
         do {
-            let items = try decoder.decode([T].self, from: data)
-            return items
+            let wrapper = try decoder.decode(DataTablesResponse<T>.self, from: data)
+            logger.info("Erfolgreich decodiert: \(wrapper.recordsTotal) Datensaetze (\(wrapper.data.count) geladen)")
+            return wrapper.data
         } catch {
-            logger.error("JSON Decode Fehler: \(error.localizedDescription)")
             let raw = String(data: data, encoding: .utf8) ?? "<binary>"
-            logger.error("Response: \(raw.prefix(500))")
+            logger.error("JSON Decode Fehler: \(error)")
+            logger.error("Response (first 500 chars): \(raw.prefix(500))")
+            
+            // Check if response is HTML (session expired → redirected to login page)
+            if raw.contains("<html") || raw.contains("<form") || raw.contains("login") {
+                logger.warning("Server hat HTML statt JSON zurueckgegeben - Session vermutlich abgelaufen")
+                throw MyIceError.notAuthenticated
+            }
             throw MyIceError.decodingFailed
         }
     }
@@ -227,9 +321,9 @@ enum MyIceError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL: return "Ungültige URL"
-        case .invalidResponse: return "Ungültige Antwort vom Server"
-        case .loginFailed: return "Anmeldung fehlgeschlagen. Prüfe E-Mail und Passwort."
+        case .invalidURL: return "Ung\u{00FC}ltige URL"
+        case .invalidResponse: return "Ung\u{00FC}ltige Antwort vom Server"
+        case .loginFailed: return "Anmeldung fehlgeschlagen. Pr\u{00FC}fe E-Mail und Passwort."
         case .tooManyRedirects: return "Zu viele Weiterleitungen"
         case .notAuthenticated: return "Nicht angemeldet"
         case .decodingFailed: return "Daten konnten nicht gelesen werden"

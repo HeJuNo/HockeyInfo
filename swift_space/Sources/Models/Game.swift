@@ -14,15 +14,20 @@ struct Game: Codable, Identifiable, Hashable {
     let weekday: String
     let time_start: String
     let time_end: String
-    let meeting: String
-    let departure: String
+    let meeting: String?
+    let departure: String?
     let game_files: Int
     let health_status: String
     let health_status_label: String
-    let notes: String
-    let health_notes: String
+    let notes: String?
+    let health_notes: String?
     let available: String
     let color: String
+
+    /// Display-friendly notes, never nil
+    var displayNotes: String {
+        (notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var parsedDate: Date? {
         let df = DateFormatter()
@@ -37,7 +42,20 @@ struct Game: Codable, Identifiable, Hashable {
     }
 
     var isHome: Bool {
-        type.lowercased().contains("heim") || type.uppercased() == "H"
+        // Check multiple patterns the API might use
+        let lower = type.lowercased()
+        let nameLower = name.lowercased()
+        if nameLower.contains("(ausw\u{00E4}rts)") { return false }
+        if lower.contains("heim") || lower.uppercased() == "H" { return true }
+        // If not explicitly away, assume home
+        return !nameLower.contains("ausw")
+    }
+
+    /// Display title: prefer the name field (opponent name without group prefix)
+    var displayTitle: String {
+        if !name.isEmpty { return name }
+        if !title.isEmpty { return title.replacingOccurrences(of: "\n", with: " \u{00B7} ") }
+        return "Spiel"
     }
 
     var resultComponents: (home: Int, away: Int)? {
@@ -79,12 +97,22 @@ struct Game: Codable, Identifiable, Hashable {
     }
 
     var meetingTime: String {
-        guard !meeting.isEmpty, meeting != "00:00" else { return "" }
-        return meeting
+        guard let m = meeting, !m.isEmpty, m != "00:00", m != "00:00:00" else { return "" }
+        return formatTime(m)
     }
 
     var departureTime: String {
-        guard !departure.isEmpty, departure != "00:00" else { return "" }
-        return departure
+        guard let d = departure, !d.isEmpty, d != "00:00", d != "00:00:00" else { return "" }
+        return formatTime(d)
+    }
+
+    /// Formatted time strings (strip seconds)
+    var displayTimeStart: String { formatTime(time_start) }
+    var displayTimeEnd: String { formatTime(time_end) }
+
+    private func formatTime(_ t: String) -> String {
+        let parts = t.split(separator: ":")
+        guard parts.count >= 2 else { return t }
+        return "\(parts[0]):\(parts[1])"
     }
 }

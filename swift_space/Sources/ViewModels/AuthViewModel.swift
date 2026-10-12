@@ -18,12 +18,44 @@ class AuthViewModel {
 
     init() {
         hasSavedCredentials = KeychainHelper.email != nil && KeychainHelper.password != nil
-        playerName = KeychainHelper.playerName ?? ""
-        teamName = KeychainHelper.teamName ?? ""
+        loadPlayerInfo()
         Task {
-            let loaded = await MyIceAPIClient.shared.loadCookiesFromKeychain()
-            if loaded {
-                await MainActor.run { self.isAuthenticated = true }
+            await tryRestoreSession()
+        }
+    }
+
+    private func loadPlayerInfo() {
+        let name = KeychainHelper.playerName ?? ""
+        let team = KeychainHelper.teamName ?? ""
+        // Filter out "deleted" or empty cookie artifacts
+        playerName = (name.lowercased() == "deleted" || name.isEmpty) ? "" : name
+        teamName = (team.lowercased() == "deleted" || team.isEmpty) ? "" : team
+    }
+
+    @MainActor
+    private func tryRestoreSession() async {
+        let loaded = await MyIceAPIClient.shared.loadCookiesFromKeychain()
+        guard loaded else {
+            logger.info("Keine gespeicherten Cookies vorhanden")
+            return
+        }
+
+        // Validate the session is still alive
+        let valid = await MyIceAPIClient.shared.validateSession()
+        if valid {
+            loadPlayerInfo()
+            isAuthenticated = true
+            logger.info("Session wiederhergestellt")
+        } else {
+            // Try re-login with saved credentials
+            logger.info("Session abgelaufen, versuche Re-Login")
+            let relogged = await MyIceAPIClient.shared.reloginIfNeeded()
+            if relogged {
+                loadPlayerInfo()
+                isAuthenticated = true
+                logger.info("Re-Login erfolgreich")
+            } else {
+                logger.warning("Re-Login fehlgeschlagen, Benutzer muss sich neu anmelden")
             }
         }
     }
@@ -42,8 +74,7 @@ class AuthViewModel {
                 KeychainHelper.email = email
                 KeychainHelper.password = password
             }
-            playerName = KeychainHelper.playerName ?? ""
-            teamName = KeychainHelper.teamName ?? ""
+            loadPlayerInfo()
             isAuthenticated = true
             logger.info("Login erfolgreich")
         } catch {
@@ -58,7 +89,7 @@ class AuthViewModel {
         let context = LAContext()
         var nsError: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &nsError) else {
-            errorMessage = "Biometrische Authentifizierung nicht verfügbar."
+            errorMessage = "Biometrische Authentifizierung nicht verf\u{00FC}gbar."
             return
         }
         guard let savedEmail = KeychainHelper.email,
@@ -97,5 +128,14 @@ class AuthViewModel {
         UserDefaults.standard.removeObject(forKey: "cachedPractices")
         UserDefaults.standard.removeObject(forKey: "cachedGames")
         UserDefaults.standard.removeObject(forKey: "lastSyncDate")
+    }
+
+    /// Displayable greeting name: player name, or email prefix, or empty
+    var displayName: String {
+        if !playerName.isEmpty { return playerName }
+        if let e = KeychainHelper.email {
+            return e.components(separatedBy: "@").first ?? ""
+        }
+        return ""
     }
 }

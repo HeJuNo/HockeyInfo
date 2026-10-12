@@ -13,13 +13,18 @@ struct Practice: Codable, Identifiable, Hashable {
     let time_end: String
     let start: String
     let end: String
-    let duration: String
+    let duration: Int
     let health_status: String
     let health_status_label: String
-    let health_notes: String
-    let notes: String
+    let health_notes: String?
+    let notes: String?
     let color: String
     let editable: String
+
+    /// Display-friendly notes, never nil
+    var displayNotes: String {
+        (notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var parsedDate: Date? {
         let df = DateFormatter()
@@ -49,5 +54,15 @@ struct Practice: Codable, Identifiable, Hashable {
         case "9": return "red"
         default: return "gray"
         }
+    }
+
+    /// Formatted time strings (strip seconds: "16:30:00" → "16:30")
+    var displayTimeStart: String { formatTime(time_start) }
+    var displayTimeEnd: String { formatTime(time_end) }
+
+    private func formatTime(_ t: String) -> String {
+        let parts = t.split(separator: ":")
+        guard parts.count >= 2 else { return t }
+        return "\(parts[0]):\(parts[1])"
     }
 }

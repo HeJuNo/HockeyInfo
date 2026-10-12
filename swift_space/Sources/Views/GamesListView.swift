@@ -114,7 +114,7 @@ struct GamesListView: View {
                     .foregroundStyle(g.isHome ? AppTheme.accent : .orange)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                Text(g.title.isEmpty ? g.name : g.title)
+                Text(g.displayTitle)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
 
@@ -132,7 +132,7 @@ struct GamesListView: View {
                 Label("\(g.weekday), \(formatDate(g.date))", systemImage: "calendar")
                     .font(.caption)
                     .foregroundStyle(AppTheme.subtitleColor)
-                Label(g.time_start, systemImage: "clock")
+                Label(g.displayTimeStart, systemImage: "clock")
                     .font(.caption)
                     .foregroundStyle(AppTheme.subtitleColor)
             }
@@ -143,8 +143,8 @@ struct GamesListView: View {
                     .foregroundStyle(AppTheme.subtitleColor)
             }
 
-            if !g.notes.isEmpty {
-                Text(g.notes)
+            if !g.displayNotes.isEmpty {
+                Text(g.displayNotes)
                     .font(.caption)
                     .foregroundStyle(AppTheme.subtitleColor)
                     .italic()

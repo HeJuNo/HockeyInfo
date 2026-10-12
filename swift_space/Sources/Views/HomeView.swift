@@ -40,8 +40,8 @@ struct HomeView: View {
                 Text(greeting)
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.white)
-                if !authVM.playerName.isEmpty {
-                    Text(authVM.playerName)
+                if !authVM.displayName.isEmpty {
+                    Text(authVM.displayName)
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.subtitleColor)
                 }
@@ -112,10 +112,10 @@ struct HomeView: View {
                 .frame(width: 60)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("\(p.time_start) \u{2013} \(p.time_end)")
+                    Text("\(p.displayTimeStart) \u{2013} \(p.displayTimeEnd)")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.white)
-                    Text("\(p.duration) Min. \u{00B7} \(p.type)")
+                    Text("\(p.duration) Min. · \(p.type)")
                         .font(.caption)
                         .foregroundStyle(AppTheme.subtitleColor)
                     if !p.place.isEmpty {
@@ -130,12 +130,12 @@ struct HomeView: View {
                 }
             }
 
-            if !p.notes.isEmpty {
+            if !p.displayNotes.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Bemerkungen")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(AppTheme.accent)
-                    Text(p.notes)
+                    Text(p.displayNotes)
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.subtitleColor)
                         .italic()
@@ -174,7 +174,7 @@ struct HomeView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .foregroundStyle(g.isHome ? AppTheme.accent : .orange)
 
-                Text(g.title.isEmpty ? g.name : g.title)
+                Text(g.displayTitle)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.white)
             }
@@ -183,7 +183,7 @@ struct HomeView: View {
                 Label(formatDisplayDate(g.date), systemImage: "calendar")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.subtitleColor)
-                Label(g.time_start, systemImage: "clock")
+                Label(g.displayTimeStart, systemImage: "clock")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.subtitleColor)
             }
@@ -194,12 +194,12 @@ struct HomeView: View {
                     .foregroundStyle(AppTheme.subtitleColor)
             }
 
-            if !g.notes.isEmpty {
+            if !g.displayNotes.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Bemerkungen")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
-                    Text(g.notes)
+                    Text(g.displayNotes)
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.subtitleColor)
                         .italic()

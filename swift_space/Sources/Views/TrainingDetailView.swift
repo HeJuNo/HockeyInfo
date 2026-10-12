@@ -8,7 +8,7 @@ struct TrainingDetailView: View {
             VStack(spacing: 24) {
                 heroSection
                 attendanceSection
-                if !practice.notes.isEmpty {
+                if !practice.displayNotes.isEmpty {
                     remarksSection
                 }
                 locationSection
@@ -51,7 +51,7 @@ struct TrainingDetailView: View {
                 .font(.headline)
                 .foregroundStyle(AppTheme.subtitleColor)
 
-            Text("\(practice.time_start) \u{2013} \(practice.time_end)")
+            Text("\(practice.displayTimeStart) \u{2013} \(practice.displayTimeEnd)")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(AppTheme.accent)
 
@@ -91,7 +91,7 @@ struct TrainingDetailView: View {
                 .foregroundStyle(.white)
 
             // Parse structured remarks
-            ForEach(parseRemarks(practice.notes), id: \.self) { line in
+            ForEach(parseRemarks(practice.displayNotes), id: \.self) { line in
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: remarkIcon(for: line))
                         .font(.subheadline)
@@ -108,7 +108,7 @@ struct TrainingDetailView: View {
             Text("Original")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AppTheme.dimText)
-            Text(practice.notes)
+            Text(practice.displayNotes)
                 .font(.caption)
                 .foregroundStyle(AppTheme.subtitleColor)
                 .italic()

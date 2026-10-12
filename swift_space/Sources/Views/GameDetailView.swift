@@ -12,7 +12,7 @@ struct GameDetailView: View {
                 }
                 attendanceSection
                 timesSection
-                if !game.notes.isEmpty {
+                if !game.displayNotes.isEmpty {
                     remarksSection
                 }
                 locationSection
@@ -36,7 +36,7 @@ struct GameDetailView: View {
                 .foregroundStyle(game.isHome ? AppTheme.accent : .orange)
                 .clipShape(Capsule())
 
-            Text(game.title.isEmpty ? game.name : game.title)
+            Text(game.displayTitle)
                 .font(.title2.weight(.bold))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -59,7 +59,7 @@ struct GameDetailView: View {
                 .font(.headline)
                 .foregroundStyle(AppTheme.subtitleColor)
 
-            Text(game.time_start)
+            Text(game.displayTimeStart)
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(AppTheme.accent)
 
@@ -125,11 +125,11 @@ struct GameDetailView: View {
                 }
             }
             HStack(spacing: 20) {
-                Label("Beginn: \(game.time_start)", systemImage: "clock")
+                Label("Beginn: \(game.displayTimeStart)", systemImage: "clock")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.subtitleColor)
                 if !game.time_end.isEmpty {
-                    Label("Ende: \(game.time_end)", systemImage: "clock.badge.checkmark")
+                    Label("Ende: \(game.displayTimeEnd)", systemImage: "clock.badge.checkmark")
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.subtitleColor)
                 }
@@ -145,7 +145,7 @@ struct GameDetailView: View {
             Text("Bemerkungen")
                 .font(.headline)
                 .foregroundStyle(.white)
-            Text(game.notes)
+            Text(game.displayNotes)
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.subtitleColor)
                 .italic()

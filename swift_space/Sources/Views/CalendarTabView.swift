@@ -146,7 +146,7 @@ struct CalendarTabView: View {
                         Text("Training")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
-                        Text("\(p.time_start) \u{2013} \(p.time_end) \u{00B7} \(p.place)")
+                        Text("\(p.displayTimeStart) \u{2013} \(p.displayTimeEnd) \u{00B7} \(p.place)")
                             .font(.caption)
                             .foregroundStyle(AppTheme.subtitleColor)
                     }
@@ -163,7 +163,7 @@ struct CalendarTabView: View {
                         Text(g.title.isEmpty ? g.name : g.title)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
-                        Text("\(g.time_start) \u{00B7} \(g.place)")
+                        Text("\(g.displayTimeStart) \u{00B7} \(g.place)")
                             .font(.caption)
                             .foregroundStyle(AppTheme.subtitleColor)
                     }
