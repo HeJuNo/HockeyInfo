@@ -1,0 +1,16 @@
+[master (root-commit) 2acfacf] 96ae374f-e6df-472e-9968-89a36881f5d7
+ 13 files changed, 249 insertions(+)
+ create mode 100644 .abacus.donotdelete
+ create mode 100644 .gitignore
+ create mode 100644 swift_space/.gitignore
+ create mode 100644 swift_space/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+ create mode 100644 swift_space/Assets.xcassets/AppIcon.appiconset/Contents.json
+ create mode 100644 swift_space/Assets.xcassets/Contents.json
+ create mode 100644 swift_space/Config.xcconfig
+ create mode 100644 swift_space/Sources/API/Generated/APIClient.swift
+ create mode 100644 swift_space/Sources/App/AppConfig.swift
+ create mode 100644 swift_space/Sources/App/HockeyInfoApp.swift
+ create mode 100644 swift_space/Sources/App/KeychainHelper.swift
+ create mode 100644 swift_space/Sources/Views/ContentView.swift
+ create mode 100644 swift_space/project.yml
+###2acfacfcfd8eb6005fb22f481e91cc07998b14a0###

@@ -30,3 +30,5 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         APIBaseURL: $(API_BASE_URL)
         ITSAppUsesNonExemptEncryption: false
+        NSCalendarsFullAccessUsageDescription: 'HockeyInfo möchte Trainings und Spiele in deinen Kalender eintragen.'
+        NSFaceIDUsageDescription: 'Melde dich schnell und sicher mit Face ID an.'

@@ -1,20 +1,16 @@
 import SwiftUI
 
 struct ContentView: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "hammer.circle")
-                .font(.system(size: 56))
-            Text("Project initialized")
-                .font(.title2.weight(.semibold))
-            Text("Replace ContentView with the app's real screens.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .padding()
-    }
-}
+    @State private var authVM = AuthViewModel()
 
-#Preview {
-    ContentView()
+    var body: some View {
+        Group {
+            if authVM.isAuthenticated {
+                MainTabView(authVM: authVM)
+            } else {
+                LoginView(authVM: authVM)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: authVM.isAuthenticated)
+    }
 }
