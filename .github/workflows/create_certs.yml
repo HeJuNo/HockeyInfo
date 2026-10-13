@@ -1,78 +1,114 @@
-name: 3. Zertifikate erstellen
-run-name: Zertifikate erstellen (${{ github.ref_name }})
+name: 3. Create Certificates
+run-name: Create Certificates (${{ github.ref_name }})
 
-on:
-  workflow_dispatch:
-  workflow_call:
+on: [workflow_call, workflow_dispatch]
 
 env:
   TEAMID: ${{ secrets.TEAMID }}
   GH_PAT: ${{ secrets.GH_PAT }}
+  GH_TOKEN: ${{ secrets.GH_PAT }}
   MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
   FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
   FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
   FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
-  BUNDLE_ID: ${{ vars.BUNDLE_ID }}
 
 jobs:
   validate:
-    name: Secrets pruefen
+    name: Validate
     uses: ./.github/workflows/validate_secrets.yml
     secrets: inherit
 
   create_certs:
-    name: Zertifikate
+    name: Certificates
     needs: validate
-    runs-on: macos-26
+    runs-on: xcode-27
     outputs:
       new_certificate_needed: ${{ steps.set_output.outputs.new_certificate_needed }}
+
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout Repo
+        uses: actions/checkout@v5
 
-      - name: Abhaengigkeiten installieren
-        run: bundle install
-
-      - name: Uhr synchronisieren
-        run: sudo sntp -sS time.windows.com
-
-      - name: Zertifikat und Profil erstellen/aktualisieren
-        run: bundle exec fastlane certs || true
-
-      - name: Gueltigkeit des Zertifikats pruefen
-        run: bundle exec fastlane check_and_renew_certificates
-
-      - name: Ergebnis auswerten
-        id: set_output
+      - name: Patch Match Tables
         run: |
-          FILE="${{ github.workspace }}/fastlane/new_certificate_needed.txt"
-          STATUS=$( [ -f "$FILE" ] && tr -d '\r\n' < "$FILE" || echo false )
-          echo "new_certificate_needed=$STATUS" >> "$GITHUB_OUTPUT"
-          ENABLE=$(echo "${{ vars.ENABLE_NUKE_CERTS }}" | tr '[:upper:]' '[:lower:]')
-          if [ "$STATUS" = "true" ] && [ "$ENABLE" != "true" ]; then
-            echo "::error::Kein gueltiges Distribution-Zertifikat. Automatische Erneuerung ist aus – Variable ENABLE_NUKE_CERTS=true setzen und erneut starten."
+          TABLE_PRINTER_PATH=$(ruby -e 'puts Gem::Specification.find_by_name("fastlane").gem_dir')/match/lib/match/table_printer.rb
+          if [ -f "$TABLE_PRINTER_PATH" ]; then
+            sed -i "" "/puts(Terminal::Table.new(params))/d" "$TABLE_PRINTER_PATH"
+          else
+            echo "table_printer.rb not found"
             exit 1
           fi
 
-  nuke_certs:
-    name: Zertifikate erneuern
-    needs: [validate, create_certs]
-    runs-on: macos-26
-    if: ${{ (needs.create_certs.outputs.new_certificate_needed == 'true' && vars.ENABLE_NUKE_CERTS == 'true') || vars.FORCE_NUKE_CERTS == 'true' }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Abhaengigkeiten installieren
+      - name: Install Project Dependencies
         run: bundle install
 
-      - name: Uhr synchronisieren
+      - name: Sync clock
         run: sudo sntp -sS time.windows.com
 
-      - name: Alte Zertifikate widerrufen
-        run: bundle exec fastlane nuke_certs
-
-      - name: Neues Zertifikat erstellen
-        run: bundle exec fastlane certs
-
-      - name: Hinweis
+      - name: Check and create or update Distribution certificate and profiles if needed
         run: |
-          echo "::warning::Alle Distribution-Zertifikate wurden widerrufen und neu erstellt. Andere Apps aus demselben Match-Secrets (z.B. Loop) nutzen beim naechsten Build automatisch das neue Zertifikat. Bestehende TestFlight-Builds funktionieren weiter."
+          echo "Running Fastlane certs lane..."
+          bundle exec fastlane certs || true
+
+      - name: Check Distribution certificate and launch Nuke certificates if needed
+        run: bundle exec fastlane check_and_renew_certificates
+        id: check_certs
+
+      - name: Set output and annotations based on Fastlane result
+        id: set_output
+        run: |
+          CERT_STATUS_FILE="${{ github.workspace }}/fastlane/new_certificate_needed.txt"
+          ENABLE_NUKE_CERTS=$(echo "${{ vars.ENABLE_NUKE_CERTS }}" | tr '[:upper:]' '[:lower:]')
+          FORCE_NUKE_CERTS=$(echo "${{ vars.FORCE_NUKE_CERTS }}" | tr '[:upper:]' '[:lower:]')
+
+          if [ -f "$CERT_STATUS_FILE" ]; then
+            CERT_STATUS=$(cat "$CERT_STATUS_FILE" | tr -d '\n' | tr -d '\r')
+            echo "new_certificate_needed: $CERT_STATUS"
+            echo "new_certificate_needed=$CERT_STATUS" >> $GITHUB_OUTPUT
+          else
+            echo "Certificate status file not found. Defaulting to false."
+            echo "new_certificate_needed=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ "$CERT_STATUS" != "true" ] && [ "$ENABLE_NUKE_CERTS" != "true" ]; then
+            echo "::notice::🔔 Automated renewal of certificates is disabled because the repository variable ENABLE_NUKE_CERTS is not set to 'true'."
+          fi
+          if [ "$CERT_STATUS" = "true" ] && [ "$ENABLE_NUKE_CERTS" != "true" ]; then
+            echo "::error::❌ No valid distribution certificate found. Automated renewal was skipped because ENABLE_NUKE_CERTS is not set to 'true'."
+            exit 1
+          fi
+          if [ "$FORCE_NUKE_CERTS" = "true" ]; then
+            echo "::warning::‼️ Nuking of certificates was forced because FORCE_NUKE_CERTS is set to 'true'."
+          fi
+
+  nuke_certs:
+    name: Nuke certificates
+    needs: [validate, create_certs]
+    runs-on: xcode-27
+    if: ${{ (needs.create_certs.outputs.new_certificate_needed == 'true' && vars.ENABLE_NUKE_CERTS == 'true') || vars.FORCE_NUKE_CERTS == 'true' }}
+    steps:
+      - name: Output from check_certs
+        run: echo "new_certificate_needed=${{ needs.create_certs.outputs.new_certificate_needed }}"
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: bundle install
+
+      - name: Run Fastlane nuke_certs
+        run: |
+          set -e
+          bundle exec fastlane nuke_certs
+
+      - name: Recreate Distribution certificate after nuking
+        run: |
+          set -e
+          bundle exec fastlane certs
+
+      - name: Add success annotations
+        if: ${{ success() }}
+        run: |
+          echo "::warning::⚠️ All Distribution certificates and TestFlight profiles have been revoked and recreated."
+          echo "::warning::❗️ If you have other apps distributed via GitHub Actions / Fastlane / TestFlight that do not renew certificates automatically, please run the '3. Create Certificates' workflow for each of these apps."
+          echo "::warning::✅ Existing TestFlight builds will keep working!"

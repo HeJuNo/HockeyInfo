@@ -1,35 +1,44 @@
-name: 2. Bundle-ID anlegen
-run-name: Bundle-ID anlegen (${{ github.ref_name }})
-
+name: 2. Add Identifiers
+run-name: Add Identifiers (${{ github.ref_name }})
 on:
   workflow_dispatch:
 
 jobs:
   validate:
-    name: Secrets pruefen
+    name: Validate
     uses: ./.github/workflows/validate_secrets.yml
     secrets: inherit
 
   identifiers:
-    name: Bundle-ID anlegen
+    name: Add Identifiers
     needs: validate
-    runs-on: macos-26
-    env:
-      TEAMID: ${{ secrets.TEAMID }}
-      GH_PAT: ${{ secrets.GH_PAT }}
-      MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-      FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
-      FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
-      FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
-      BUNDLE_ID: ${{ vars.BUNDLE_ID }}
+    runs-on: xcode-27
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout Repo
+        uses: actions/checkout@v5
 
-      - name: Abhaengigkeiten installieren
+      - name: Patch Match Tables
+        run: |
+          TABLE_PRINTER_PATH=$(ruby -e 'puts Gem::Specification.find_by_name("fastlane").gem_dir')/match/lib/match/table_printer.rb
+          if [ -f "$TABLE_PRINTER_PATH" ]; then
+            sed -i "" "/puts(Terminal::Table.new(params))/d" "$TABLE_PRINTER_PATH"
+          else
+            echo "table_printer.rb not found"
+            exit 1
+          fi
+
+      - name: Install Project Dependencies
         run: bundle install
 
-      - name: Uhr synchronisieren
+      - name: Sync clock
         run: sudo sntp -sS time.windows.com
 
-      - name: Bundle-ID anlegen
+      - name: Fastlane Provision
         run: bundle exec fastlane identifiers
+        env:
+          TEAMID: ${{ secrets.TEAMID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+          FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+          FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}

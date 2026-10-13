@@ -1,64 +1,97 @@
 name: 4. HockeyInfo bauen
 run-name: HockeyInfo bauen (${{ github.ref_name }})
-
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-  schedule:
-    # Am 1. jedes Monats um 06:17 UTC neu bauen, damit der TestFlight-Build
-    # (90 Tage gueltig) nie ablaeuft. Abschalten: Variable SCHEDULED_BUILD=false.
-    - cron: "17 6 1 * *"
+
+env:
+  GH_PAT: ${{ secrets.GH_PAT }}
 
 jobs:
+  validate:
+    name: Validate
+    uses: ./.github/workflows/validate_secrets.yml
+    secrets: inherit
+
   check_certs:
-    name: Zertifikate pruefen
-    if: github.event_name == 'workflow_dispatch' || vars.SCHEDULED_BUILD != 'false'
+    needs: [validate]
+    name: Check certificates
     uses: ./.github/workflows/create_certs.yml
     secrets: inherit
 
   build:
-    name: Bauen und hochladen
-    needs: check_certs
-    runs-on: macos-26
-    env:
-      TEAMID: ${{ secrets.TEAMID }}
-      GH_PAT: ${{ secrets.GH_PAT }}
-      MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-      FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
-      FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
-      FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
-      BUNDLE_ID: ${{ vars.BUNDLE_ID }}
-      APP_VERSION: ${{ vars.APP_VERSION }}
+    name: Build
+    needs: [check_certs]
+    runs-on: xcode-27
+    permissions:
+      contents: write
     steps:
-      - name: Xcode auswaehlen
-        uses: maxim-lobanov/setup-xcode@v1
+      - name: Select Xcode version
+        run: "sudo xcode-select --switch /Applications/Xcode_27.0.app/Contents/Developer"
+
+      - name: Checkout Repo for building
+        uses: actions/checkout@v5
         with:
-          xcode-version: latest-stable
+          token: ${{ secrets.GH_PAT }}
 
-      - uses: actions/checkout@v5
-
-      - name: Xcode-Projekt erzeugen (XcodeGen)
+      # Apply patches from patches/ directory if any exist
+      - name: Apply Patches
         run: |
-          brew install xcodegen
-          cd swift_space && xcodegen generate
+          if $(ls ./patches/* &> /dev/null); then
+            git apply ./patches/* --allow-empty -v --whitespace=fix
+          fi
 
-      - name: Abhaengigkeiten installieren
+      - name: Patch Match Tables
+        run: |
+          TABLE_PRINTER_PATH=$(ruby -e 'puts Gem::Specification.find_by_name("fastlane").gem_dir')/match/lib/match/table_printer.rb
+          if [ -f "$TABLE_PRINTER_PATH" ]; then
+            sed -i "" "/puts(Terminal::Table.new(params))/d" "$TABLE_PRINTER_PATH"
+          else
+            echo "table_printer.rb not found"
+            exit 1
+          fi
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen &> /dev/null; then
+            brew install xcodegen
+          fi
+
+      - name: Generate Xcode Project
+        working-directory: swift_space
+        run: xcodegen generate
+
+      - name: Install Project Dependencies
         run: bundle install
 
-      - name: Uhr synchronisieren
+      - name: Sync clock
         run: sudo sntp -sS time.windows.com
 
-      - name: Signierte IPA bauen
-        run: bundle exec fastlane build
+      - name: Fastlane Build & Archive
+        run: bundle exec fastlane build_hockeyinfo
+        env:
+          TEAMID: ${{ secrets.TEAMID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+          FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+          FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
 
-      - name: Zu TestFlight hochladen
+      - name: Fastlane upload to TestFlight
         run: bundle exec fastlane release
+        env:
+          TEAMID: ${{ secrets.TEAMID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+          FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+          FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
 
-      - name: Build-Protokoll und IPA sichern
+      - name: Upload build log, IPA and Symbol artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-artifacts
           path: |
